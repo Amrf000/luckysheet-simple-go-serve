@@ -9,7 +9,8 @@ import (
 	"log"
 	"net/http"
 	"os"
-	"strconv"
+	"path"
+	"path/filepath"
 	"time"
 
 	"github.com/gorilla/websocket"
@@ -33,8 +34,9 @@ const (
 var (
 	addr      = flag.String("addr", ":8080", "http service address")
 	homeTempl = template.Must(template.New("").Parse(homeHTML))
-	filename  string
-	upgrader  = websocket.Upgrader{
+	// filename  string
+	basepath string
+	upgrader = websocket.Upgrader{
 		ReadBufferSize:  1024,
 		WriteBufferSize: 1024,
 		CheckOrigin: func(r *http.Request) bool {
@@ -49,19 +51,19 @@ type FileInfo struct {
 	Filename string
 }
 
-func readFileIfModified(lastMod time.Time, Filename string) (FileInfo, error) {
-	fi, err := os.Stat(filename)
+func readFileIfModified(lastMod time.Time, filename string) (FileInfo, error) {
+	fi, err := os.Stat(path.Join(basepath, filename))
 	if err != nil {
-		return FileInfo{lastMod, nil, Filename}, err
+		return FileInfo{lastMod, nil, filename}, err
 	}
 	if !fi.ModTime().After(lastMod) {
-		return FileInfo{lastMod, nil, Filename}, nil
+		return FileInfo{lastMod, nil, filename}, nil
 	}
 	p, err := ioutil.ReadFile(filename)
 	if err != nil {
-		return FileInfo{lastMod, nil, Filename}, err
+		return FileInfo{lastMod, nil, filename}, err
 	}
-	return FileInfo{fi.ModTime(), p, Filename}, nil
+	return FileInfo{fi.ModTime(), p, filename}, nil
 }
 
 func reader(ws *websocket.Conn) {
@@ -175,12 +177,47 @@ func serveUpdate(w http.ResponseWriter, r *http.Request) {
 	//	return
 	//}
 
-	ioutil.WriteFile(filename, p.Options, 0644)
-	err = os.Chtimes(filename, p.LastMod, p.LastMod)
+	ioutil.WriteFile(p.Filename, p.Options, 0644)
+	err = os.Chtimes(p.Filename, p.LastMod, p.LastMod)
 	if err != nil {
 		fmt.Println(err)
 	}
 
+	w.Write([]byte("{}"))
+}
+
+func serveCreate(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodPost {
+		http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
+		return
+	}
+	var p FileInfo
+	err := json.NewDecoder(r.Body).Decode(&p)
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusBadRequest)
+		return
+	}
+	w.Header().Set("Content-Type", "application/json; charset=utf-8")
+	if _, err := os.Stat(path.Join(basepath, p.Filename)); err == nil {
+		http.Error(w, "已存在", http.StatusBadRequest)
+		return
+	}
+	bytesRead, err := ioutil.ReadFile("tp")
+	if err != nil {
+		log.Fatal(err)
+		http.Error(w, err.Error(), http.StatusBadRequest)
+		return
+	}
+	err = ioutil.WriteFile(p.Filename, bytesRead, 0644)
+	if err != nil {
+		log.Fatal(err)
+		http.Error(w, err.Error(), http.StatusBadRequest)
+		return
+	}
+	err = os.Chtimes(p.Filename, p.LastMod, p.LastMod)
+	if err != nil {
+		fmt.Println(err)
+	}
 	w.Write([]byte("{}"))
 }
 
@@ -193,7 +230,7 @@ func serveHome(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
 		return
 	}
-	filename = r.URL.Query().Get("filename")
+	filename := r.URL.Query().Get("filename")
 	if filename == "" {
 		http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
 		return
@@ -204,6 +241,8 @@ func serveHome(w http.ResponseWriter, r *http.Request) {
 	if err != nil {
 		info.Options = []byte(err.Error())
 		info.LastMod = time.Unix(0, 0)
+		http.Error(w, err.Error(), http.StatusNotFound)
+		return
 	}
 	//tst := string(p)
 	//if strings.Contains(tst, "\t") {
@@ -220,11 +259,13 @@ func serveHome(w http.ResponseWriter, r *http.Request) {
 	//	strconv.FormatInt(lastMod.UnixNano(), 16),
 	//}
 	//homeTempl.Execute(w, &v)
-	fmt.Println(strconv.FormatInt(info.LastMod.UnixNano(), 16))
-	w.WriteHeader(http.StatusOK)
+	// fmt.Println(strconv.FormatInt(info.LastMod.UnixNano(), 16))
+
 	if ret, err := json.Marshal(info); err != nil {
 		fmt.Println(err)
+		http.Error(w, "Not found", http.StatusNotFound)
 	} else {
+		w.WriteHeader(http.StatusOK)
 		w.Write(ret)
 	}
 	//dst := base64.StdEncoding.EncodeToString(p)
@@ -248,14 +289,16 @@ func serveHome(w http.ResponseWriter, r *http.Request) {
 }
 
 func main() {
-	flag.Parse()
+	//flag.Parse()
 	//if flag.NArg() != 1 {
 	//	log.Fatal("filename not specified")
 	//}
 	// filename = flag.Args()[0]
+	basepath, _ = filepath.Abs(filepath.Dir(os.Args[0]))
 	mux := http.NewServeMux()
 	mux.HandleFunc("/", serveHome)
-	mux.HandleFunc("/post", serveUpdate)
+	mux.HandleFunc("/create", serveCreate)
+	mux.HandleFunc("/update", serveUpdate)
 	mux.HandleFunc("/ws", serveWs)
 	handler := cors.Default().Handler(mux)
 	if err := http.ListenAndServe(*addr, handler); err != nil {

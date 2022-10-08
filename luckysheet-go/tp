@@ -1,0 +1,39 @@
+{
+  "container":"luckysheet","lang":"zh","forceCalculation":false,
+  "data": [
+    {
+      "name": "Sheet1",
+      "color": "",
+      "index": 0,
+      "status": 1,
+      "order": 0,
+      "hide": 0,
+      "defaultRowHeight": 19,
+      "defaultColWidth": 73,
+      "celldata": [],
+      "config": {
+        "merge":{},
+        "rowlen":{},
+        "columnlen":{},
+        "rowhidden":{},
+        "colhidden":{},
+        "borderInfo":{},
+        "authority":{}
+      },
+      "luckysheet_select_save": [],
+      "calcChain": [],
+      "isPivotTable":false,
+      "pivotTable":{},
+      "filter_select": {},
+      "filter": null,
+      "luckysheet_alternateformat_save": [],
+      "luckysheet_alternateformat_save_modelCustom": [],
+      "luckysheet_conditionformat_save": {},
+      "frozen": {},
+      "chart": [],
+      "zoomRatio":1,
+      "image":[],
+      "showGridLines": 1
+    }
+  ]
+}
